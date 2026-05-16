@@ -1,9 +1,3 @@
-/*
-  Student Engagement Monitoring System
-  Front-end interface using dummy data.
-  Roles: Student, Personal Supervisor and Senior Tutor.
-*/
-
 const today = '2026-05-01';
 const app = document.querySelector('#app');
 
@@ -54,6 +48,13 @@ const roleNames = {
   seniorTutor: 'Senior Tutor'
 };
 
+const sliderColours = {
+  good: '#166534',
+  medium: '#92400e',
+  low: '#991b1b',
+  track: '#e5e7eb'
+};
+
 function students() {
   return users.filter(user => user.role === 'student');
 }
@@ -82,6 +83,12 @@ function latestCheckIn(studentId) {
 
 function meetingsForStudent(studentId) {
   return meetings.filter(meeting => meeting.studentId === studentId);
+}
+
+function scheduledMeetingsForStudent(studentId) {
+  return meetingsForStudent(studentId)
+    .filter(meeting => meeting.status === 'scheduled')
+    .sort((a, b) => new Date(`${a.date}T${a.time}`) - new Date(`${b.date}T${b.time}`));
 }
 
 function studentsForSupervisor(supervisorId) {
@@ -264,6 +271,8 @@ function renderStudentDashboard() {
   const supervisor = supervisorFor(currentUser);
   const risk = riskLevel(currentUser);
   const studentMeetings = meetingsForStudent(currentUser.id);
+  const scheduledMeetings = scheduledMeetingsForStudent(currentUser.id);
+  const nextMeeting = scheduledMeetings[0];
 
   page(
     `Welcome, ${currentUser.name}`,
@@ -274,6 +283,19 @@ function renderStudentDashboard() {
         ${stat(latest ? `${latest.anxiety}/5` : 'N/A', 'Latest anxiety score')}
         ${stat(latest ? `${latest.engagement}%` : 'N/A', 'Engagement estimate')}
       </section>
+
+      ${
+        nextMeeting
+          ? `
+            <section class="alert info-alert">
+              <strong>Upcoming meeting:</strong>
+              You have a scheduled meeting with ${escapeHtml(supervisor.name)}
+              on ${formatDate(nextMeeting.date)} at ${escapeHtml(nextMeeting.time)}.
+              <span class="small">Reason: ${escapeHtml(nextMeeting.reason || 'Not specified')}</span>
+            </section>
+          `
+          : ''
+      }
 
       <section class="grid grid-2">
         <div class="card stack">
@@ -293,7 +315,7 @@ function renderStudentDashboard() {
                 Mood:
                 <span id="moodValue">4</span>/5
               </label>
-              <input id="mood" type="range" min="1" max="5" value="4" required />
+              <input id="mood" type="range" min="1" max="5" value="4" data-slider-type="positive" required />
               <p class="muted small">1 = very low, 5 = excellent</p>
             </div>
 
@@ -302,7 +324,7 @@ function renderStudentDashboard() {
                 Anxiety:
                 <span id="anxietyValue">2</span>/5
               </label>
-              <input id="anxiety" type="range" min="1" max="5" value="2" required />
+              <input id="anxiety" type="range" min="1" max="5" value="2" data-slider-type="negative" required />
               <p class="muted small">1 = very low, 5 = very high</p>
             </div>
 
@@ -311,7 +333,7 @@ function renderStudentDashboard() {
                 Engagement:
                 <span id="engagementValue">70</span>%
               </label>
-              <input id="engagement" type="range" min="0" max="100" value="70" required />
+              <input id="engagement" type="range" min="0" max="100" value="70" data-slider-type="positive" required />
               <p class="muted small">Estimate your current academic engagement.</p>
             </div>
 
@@ -396,10 +418,53 @@ function setupSliders() {
       return;
     }
 
+    updateSliderDisplay(input, output);
+
     input.addEventListener('input', () => {
-      output.textContent = input.value;
+      updateSliderDisplay(input, output);
     });
   });
+}
+
+function updateSliderDisplay(input, output) {
+  output.textContent = input.value;
+  updateSliderColour(input);
+}
+
+function updateSliderColour(input) {
+  const min = Number(input.min);
+  const max = Number(input.max);
+  const value = Number(input.value);
+  const percentage = ((value - min) / (max - min)) * 100;
+  const sliderType = input.dataset.sliderType;
+
+  let activeColour = sliderColours.medium;
+
+  if (sliderType === 'negative') {
+    if (percentage <= 33) {
+      activeColour = sliderColours.good;
+    } else if (percentage <= 66) {
+      activeColour = sliderColours.medium;
+    } else {
+      activeColour = sliderColours.low;
+    }
+  } else {
+    if (percentage <= 33) {
+      activeColour = sliderColours.low;
+    } else if (percentage <= 66) {
+      activeColour = sliderColours.medium;
+    } else {
+      activeColour = sliderColours.good;
+    }
+  }
+
+  input.style.background = `linear-gradient(
+    to right,
+    ${activeColour} 0%,
+    ${activeColour} ${percentage}%,
+    ${sliderColours.track} ${percentage}%,
+    ${sliderColours.track} 100%
+  )`;
 }
 
 function renderSupervisorDashboard() {
@@ -479,8 +544,7 @@ function renderSeniorTutorDashboard() {
 function studentCard(student) {
   const latest = latestCheckIn(student.id);
   const risk = riskLevel(student);
-  const meetingsCount = meetingsForStudent(student.id)
-    .filter(meeting => meeting.status === 'scheduled').length;
+  const meetingsCount = scheduledMeetingsForStudent(student.id).length;
 
   return `
     <article class="student-card">
@@ -675,7 +739,7 @@ function submitCheckIn(event) {
     note: document.querySelector('#note').value.trim()
   });
 
-  message = 'Your wellbeing check-in has been recorded.';
+  message = 'Your wellbeing check-in has been recorded and your dashboard has been updated.';
   renderStudentDashboard();
 }
 
@@ -695,7 +759,7 @@ function submitMeetingRequest(event) {
     reason: document.querySelector('#meetingReason').value.trim()
   });
 
-  message = 'Meeting request has been added to the dashboard.';
+  message = 'Your meeting request has been added to your meetings table.';
   renderStudentDashboard();
 }
 
